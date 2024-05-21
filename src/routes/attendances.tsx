@@ -1,22 +1,33 @@
 import { useState, useRef, useEffect } from 'react'
 import { format } from 'date-fns'
+import { useNavigate, useParams } from 'react-router-dom'
+
 import { Button } from '@/components/button'
 import { List, ListItem } from '@/components/list'
-import { useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import useAttendance from '@/hooks/useAttendance'
+import { PONTO_ILUMEO_API } from '@/consts/ponto-ilumeo-api'
 
 export default function Attendances() {
   const params = useParams()
   const { userCode } = params as { userCode: string }
-  console.log(params.userCode)
 
-  const query = useQuery({
-    queryKey: ['attendances', userCode],
-    queryFn: async () => {
-      const response = await fetch(`/api/attendances/${userCode}`)
-      return response.json()
-    },
-  });
+  const navigate = useNavigate()
+
+  const { data, isLoading, error } = useAttendance(userCode)
+
+  if (error) {
+    navigate('/')
+  }
+
+  const [currentAttendance, setCurrentAttendance] = useState<
+    | {
+        id: string
+        startDate: string
+        endDate: string
+        hoursWorked: string
+      }
+    | undefined
+  >(undefined)
 
   const [hoursWorked, setHoursWorked] = useState<string>('0h 00m')
   const [running, setRunning] = useState<boolean>(false)
@@ -24,22 +35,15 @@ export default function Attendances() {
   const timerRef = useRef<number | null>(null)
 
   const [attendances, setAttendances] = useState<
-    { dateWorked: string; hoursWorked: string }[]
+    { startDate?: string; hoursWorked: string; endDate?: string }[]
   >([])
+
   useEffect(() => {
-    setAttendances([
-      { dateWorked: '02/11/23', hoursWorked: '8h 30m' },
-      { dateWorked: '01/11/23', hoursWorked: '7h 30m' },
-      { dateWorked: '31/10/23', hoursWorked: '8h 30m' },
-      { dateWorked: '30/10/23', hoursWorked: '7h 30m' },
-      { dateWorked: '29/10/23', hoursWorked: '8h 30m' },
-      { dateWorked: '28/10/23', hoursWorked: '7h 30m' },
-      { dateWorked: '27/10/23', hoursWorked: '8h 30m' },
-      { dateWorked: '26/10/23', hoursWorked: '7h 30m' },
-      { dateWorked: '25/10/23', hoursWorked: '8h 30m' },
-      { dateWorked: '24/10/23', hoursWorked: '7h 30m' },
-    ])
-  }, [])
+    if (!isLoading) {
+      setAttendances(data.attendancesByUserCode.attendances)
+    }
+  }, [data, isLoading])
+
   useEffect(() => {
     if (running) {
       timerRef.current = window.setInterval(() => {
@@ -64,22 +68,55 @@ export default function Attendances() {
     console.log(seconds)
   }, [seconds])
 
-  const handleStart = (): void => {
+  const handleStart = async (): Promise<void> => {
     setRunning(true)
-  };
+    const response = await fetch(`${PONTO_ILUMEO_API}/attendances`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userCode,
+        startDate: new Date().toISOString(),
+      }),
+    })
 
-  const handleStop = (): void => {
+    const data = await response.json()
+
+    if (data) {
+      setCurrentAttendance(data.attendance)
+    }
+  }
+
+  const handleStop = async (): Promise<void> => {
     setRunning(false)
     setHoursWorked('0h 00m')
     setSeconds(0)
 
-    const attendance = {
-      dateWorked: format(new Date(), 'dd/MM/yy'),
-      hoursWorked: hoursWorked,
-    }
+    const response = await fetch(
+      `${PONTO_ILUMEO_API}/attendances/${currentAttendance?.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          endDate: new Date().toISOString(),
+        }),
+      }
+    )
 
-    setAttendances([attendance, ...attendances])
-  };
+    const data = await response.json()
+
+    if (data) {
+      const attendance = {
+        endDate: data.attendance.endDate,
+        hoursWorked: data.attendance.hoursWorked,
+      }
+      console.log(data, attendance)
+      setAttendances([attendance, ...attendances])
+    }
+  }
 
   return (
     <div className="flex flex-col lg:w-[365px] mt-[85px] mx-auto">
@@ -127,8 +164,15 @@ export default function Attendances() {
       <List>
         {attendances.map((attendance) => (
           <ListItem
-            key={attendance.dateWorked}
-            dateWorked={attendance.dateWorked}
+            key={attendance.startDate}
+            dateWorked={format(
+              new Date(
+                attendance.startDate
+                  ? (attendance.startDate as string)
+                  : (attendance.endDate as string)
+              ),
+              'dd/MM/yy'
+            )}
             hoursWorked={attendance.hoursWorked}
           />
         ))}

@@ -5,9 +5,11 @@ export default function ErrorPage() {
   console.error(error)
 
   return (
-    <div id="error-page">
-      <h1>Oops!</h1>
-      <p>Sorry, an unexpected error has occurred.</p>
+    <div>
+      <h1 className="text-white font-bold text-[26px]">Oops!</h1>
+      <p className="text-white font-bold text-[16px]">
+        Desculpe, ocorreu um erro inesperado.
+      </p>
     </div>
   )
 }
